@@ -1,18 +1,24 @@
 #!/usr/bin/env python
 
+from __future__ import annotations
+
 import argparse
 import re
 import sys
 from os import getenv
 from pathlib import Path
-from typing import Any, Mapping, Sequence, Union
+from typing import TYPE_CHECKING, Any
 
 import requests
 
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+
 ROOT = Path(__file__).parents[1].resolve()
 
-MAPPING: Mapping[str, Sequence[Union[str, int]]] = {
+MAPPING: Mapping[str, Sequence[str | int]] = {
     "ANDROID": ("android", "standard", "sample_user_agents", "chrome", 0),
     "CHROME": ("chrome", "windows", "sample_user_agents", "standard", 0),
     "CHROME_OS": ("chrome-os", "standard", "sample_user_agents", "x86_64", 0),
@@ -51,7 +57,7 @@ def main(api_key: str, file: Path):
     if not file.is_file():
         raise ValueError("Missing user agents file")
 
-    contents = file.read_text()
+    contents = file.read_text(encoding="utf-8")
 
     try:
         response = requests.request(
@@ -91,7 +97,7 @@ def main(api_key: str, file: Path):
             count=1,
         )
 
-    file.write_text(contents)
+    file.write_text(contents, encoding="utf-8")
 
 
 if __name__ == "__main__":

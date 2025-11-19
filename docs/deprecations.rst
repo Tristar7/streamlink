@@ -1,6 +1,30 @@
 Deprecations
 ============
 
+streamlink 8.0.0
+----------------
+
+--hls-duration
+^^^^^^^^^^^^^^
+
+The ``--hls-duration`` CLI argument has been deprecated in favor of :option:`--stream-segmented-duration`,
+which affects all kinds of segmented streams, not just HLS streams.
+
+
+streamlink 7.0.0
+----------------
+
+--verbose-player
+^^^^^^^^^^^^^^^^
+
+The ``--verbose-player`` CLI argument has been deprecated in favor of :option:`--player-verbose`.
+
+--fifo
+^^^^^^
+
+The ``--fifo`` CLI argument has been deprecated in favor of :option:`--player-fifo`.
+
+
 streamlink 6.11.0
 -----------------
 
@@ -16,6 +40,8 @@ streamlink 6.8.0
 
 streamlink.plugins re-exports
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:bdg-ref-danger:`Removed in 7.0.0 <migrations:streamlink.plugins re-exports>`
 
 Importing :class:`NoPluginError <streamlink.exceptions.NoPluginError>`,
 :class:`NoStreamsError <streamlink.exceptions.NoStreamsError>`, :class:`PluginError <streamlink.exceptions.PluginError>`,
@@ -40,6 +66,8 @@ streamlink 6.6.0
 
 HTTPSession and HTTPAdapters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:bdg-ref-danger:`Removed in 7.0.0 <migrations:HTTPSession and HTTPAdapters>`
 
 The module structure of the :class:`Streamlink <streamlink.session.Streamlink>` session implementation and related classes
 like the ``HTTPSession`` has been re-organized.
@@ -73,6 +101,8 @@ streamlink 5.4.0
 
 --force-progress
 ^^^^^^^^^^^^^^^^
+
+:bdg-ref-danger:`Removed in 7.0.0 <migrations:--force-progress>`
 
 The ``--force-progress`` CLI argument has been deprecated in favor of :option:`--progress=force`.
 
@@ -127,9 +157,11 @@ streamlink 4.2.0
 url_master in HLSStream
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-The ``url_master`` parameter and attribute of the :py:class:`HLSStream <streamlink.stream.HLSStream>`
-and :py:class:`MuxedHLSStream <streamlink.stream.MuxedHLSStream>` classes have been deprecated in favor of
-the ``multivariant`` parameter and attribute. ``multivariant`` is an :py:class:`M3U8` reference of the parsed
+:bdg-ref-danger:`Removed in 8.0.0 <migrations:HLSStream url_master argument>`
+
+The ``url_master`` parameter and attribute of the :class:`HLSStream <streamlink.stream.HLSStream>`
+and :class:`MuxedHLSStream <streamlink.stream.MuxedHLSStream>` classes have been deprecated in favor of
+the ``multivariant`` parameter and attribute. ``multivariant`` is an :class:`M3U8` reference of the parsed
 HLS multivariant playlist.
 
 
@@ -149,6 +181,8 @@ streamlink 2.4.0
 
 Stream-type related CLI arguments
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:bdg-ref-danger:`Removed in 7.0.0 <migrations:Stream-type related CLI arguments>`
 
 :ref:`Stream-type related CLI arguments <cli:Stream transport options>` and the respective
 :ref:`Session options <api/session:Session>` have been deprecated in favor of existing generic arguments/options,
@@ -251,6 +285,8 @@ streamlink 2.2.0
 Config file paths
 ^^^^^^^^^^^^^^^^^
 
+:bdg-ref-danger:`Removed in 7.0.0 <migrations:Config file paths>`
+
 Streamlink's default config file paths got updated and corrected on Linux/BSD, macOS and Windows.
 Old and deprecated paths will be dropped in the future.
 
@@ -307,6 +343,8 @@ To resolve this, move the config file(s) to the correct location or copy the con
 
 Custom plugins sideloading paths
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:bdg-ref-danger:`Removed in 7.0.0 <migrations:Custom plugins sideloading paths>`
 
 Streamlink's default custom plugins directory path got updated and corrected on Linux/BSD and macOS.
 Old and deprecated paths will be dropped in the future.

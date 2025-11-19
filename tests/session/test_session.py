@@ -1,17 +1,24 @@
+from __future__ import annotations
+
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
-import requests_mock as rm
 
 import tests.plugin
 from streamlink.exceptions import NoPluginError, StreamlinkDeprecationWarning
 from streamlink.options import Options
 from streamlink.plugin import Plugin, pluginmatcher
-from streamlink.session import Streamlink
 from streamlink.stream.hls import HLSStream
 from streamlink.stream.http import HTTPStream
+
+
+if TYPE_CHECKING:
+    import requests_mock as rm
+
+    from streamlink.session import Streamlink
 
 
 PATH_TESTPLUGINS = Path(tests.plugin.__path__[0])
@@ -111,11 +118,11 @@ class TestResolveURL:
             session.resolve_url_no_redirect("http://invalid")
 
     def test_resolve_url_scheme(self, session: Streamlink):
-        @pluginmatcher(re.compile("http://insecure"))
+        @pluginmatcher(re.compile(r"http://insecure"))
         class PluginHttp(_EmptyPlugin):
             pass
 
-        @pluginmatcher(re.compile("https://secure"))
+        @pluginmatcher(re.compile(r"https://secure"))
         class PluginHttps(_EmptyPlugin):
             pass
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import abc
 import logging
 import os
@@ -6,7 +8,6 @@ import tempfile
 import threading
 from contextlib import suppress
 from pathlib import Path
-from typing import Type
 
 from streamlink.compat import is_win32
 
@@ -61,7 +62,7 @@ class NamedPipePosix(NamedPipeBase):
         os.mkfifo(self.path, self.permissions)
 
     def open(self):
-        self.fifo = open(self.path, self.mode)
+        self.fifo = self.path.open(self.mode)
 
     def write(self, data):
         return self.fifo.write(data)
@@ -134,7 +135,7 @@ class NamedPipeWindows(NamedPipeBase):
             self.pipe = None
 
 
-NamedPipe: Type[NamedPipeBase]
+NamedPipe: type[NamedPipeBase]
 if not is_win32:
     NamedPipe = NamedPipePosix
 else:

@@ -1,17 +1,24 @@
+from __future__ import annotations
+
 import ssl
 from ssl import SSLContext
-from typing import Optional
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, PropertyMock, call
 
 import pytest
 import requests
-from requests.adapters import HTTPAdapter
+import requests_mock as rm
 from urllib3.response import HTTPResponse
 
-from streamlink import Streamlink
 from streamlink.exceptions import PluginError, StreamlinkDeprecationWarning
 from streamlink.session.http import HTTPSession, SSLContextAdapter, TLSNoDHAdapter, TLSSecLevel1Adapter
-from streamlink.session.http_useragents import FIREFOX
+from streamlink.session.http_useragents import DEFAULT
+
+
+if TYPE_CHECKING:
+    from requests.adapters import HTTPAdapter
+
+    from streamlink import Streamlink
 
 
 class TestUrllib3Overrides:
@@ -19,29 +26,76 @@ class TestUrllib3Overrides:
     def httpsession(self) -> HTTPSession:
         return HTTPSession()
 
-    @pytest.mark.parametrize(("url", "expected", "assertion"), [
-        ("https://foo/bar%3F?baz%21", "https://foo/bar%3F?baz%21", "Keeps encoded reserved characters"),
-        ("https://foo/%62%61%72?%62%61%7A", "https://foo/bar?baz", "Decodes encoded unreserved characters"),
-        ("https://foo/bär?bäz", "https://foo/b%C3%A4r?b%C3%A4z", "Encodes other characters"),
-        ("https://foo/b%c3%a4r?b%c3%a4z", "https://foo/b%c3%a4r?b%c3%a4z", "Keeps percent-encodings with lowercase characters"),
-        ("https://foo/b%C3%A4r?b%C3%A4z", "https://foo/b%C3%A4r?b%C3%A4z", "Keeps percent-encodings with uppercase characters"),
-        ("https://foo/%?%", "https://foo/%25?%25", "Empty percent-encodings without valid encodings"),
-        ("https://foo/%0?%0", "https://foo/%250?%250", "Incomplete percent-encodings without valid encodings"),
-        ("https://foo/%zz?%zz", "https://foo/%25zz?%25zz", "Invalid percent-encodings without valid encodings"),
-        ("https://foo/%3F%?%3F%", "https://foo/%253F%25?%253F%25", "Empty percent-encodings with valid encodings"),
-        ("https://foo/%3F%0?%3F%0", "https://foo/%253F%250?%253F%250", "Incomplete percent-encodings with valid encodings"),
-        ("https://foo/%3F%zz?%3F%zz", "https://foo/%253F%25zz?%253F%25zz", "Invalid percent-encodings with valid encodings"),
-    ])
-    def test_encode_invalid_chars(self, httpsession: HTTPSession, url: str, expected: str, assertion: str):
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            pytest.param(
+                "https://foo/bar%3F?baz%21",
+                "https://foo/bar%3F?baz%21",
+                id="keep-encoded-reserved-characters",
+            ),
+            pytest.param(
+                "https://foo/%62%61%72?%62%61%7A",
+                "https://foo/bar?baz",
+                id="decode-encoded-unreserved-characters",
+            ),
+            pytest.param(
+                "https://foo/bär?bäz",
+                "https://foo/b%C3%A4r?b%C3%A4z",
+                id="encode-other-characters",
+            ),
+            pytest.param(
+                "https://foo/b%c3%a4r?b%c3%a4z",
+                "https://foo/b%c3%a4r?b%c3%a4z",
+                id="keep-percent-encodings-with-lowercase-characters",
+            ),
+            pytest.param(
+                "https://foo/b%C3%A4r?b%C3%A4z",
+                "https://foo/b%C3%A4r?b%C3%A4z",
+                id="keep-percent-encodings-with-uppercase-characters",
+            ),
+            pytest.param(
+                "https://foo/%?%",
+                "https://foo/%25?%25",
+                id="empty-percent-encodings-without-valid-encodings",
+            ),
+            pytest.param(
+                "https://foo/%0?%0",
+                "https://foo/%250?%250",
+                id="incomplete-percent-encodings-without-valid-encodings",
+            ),
+            pytest.param(
+                "https://foo/%zz?%zz",
+                "https://foo/%25zz?%25zz",
+                id="invalid-percent-encodings-without-valid-encodings",
+            ),
+            pytest.param(
+                "https://foo/%3F%?%3F%",
+                "https://foo/%253F%25?%253F%25",
+                id="empty-percent-encodings-with-valid-encodings",
+            ),
+            pytest.param(
+                "https://foo/%3F%0?%3F%0",
+                "https://foo/%253F%250?%253F%250",
+                id="incomplete-percent-encodings-with-valid-encodings",
+            ),
+            pytest.param(
+                "https://foo/%3F%zz?%3F%zz",
+                "https://foo/%253F%25zz?%253F%25zz",
+                id="invalid-percent-encodings-with-valid-encodings",
+            ),
+        ],
+    )
+    def test_encode_invalid_chars(self, httpsession: HTTPSession, url: str, expected: str):
         req = requests.Request(method="GET", url=url)
         prep = httpsession.prepare_request(req)
-        assert prep.url == expected, assertion
+        assert prep.url == expected
 
 
 class TestHTTPSession:
     def test_session_init(self):
         session = HTTPSession()
-        assert session.headers.get("User-Agent") == FIREFOX
+        assert session.headers.get("User-Agent") == DEFAULT
         assert session.timeout == 20.0
         assert "file://" in session.adapters.keys()
 
@@ -75,28 +129,101 @@ class TestHTTPSession:
             (StreamlinkDeprecationWarning, "Deprecated HTTPSession.determine_json_encoding() call"),
         ]
 
-    @pytest.mark.parametrize(("encoding", "override"), [
-        ("utf-32-be", None),
-        ("utf-32-le", None),
-        ("utf-16-be", None),
-        ("utf-16-le", None),
-        ("utf-8", None),
-        # With byte order mark (BOM)
-        ("utf-16", None),
-        ("utf-32", None),
-        ("utf-8-sig", None),
-        # Override
-        ("utf-8", "utf-8"),
-        ("cp949", "cp949"),
-    ])
-    def test_json(self, monkeypatch: pytest.MonkeyPatch, encoding: str, override: Optional[str]):
-        mock_content = PropertyMock(return_value="{\"test\": \"Α and Ω\"}".encode(encoding))  # noqa: RUF001
+    @pytest.mark.parametrize(
+        ("encoding", "override"),
+        [
+            ("utf-32-be", None),
+            ("utf-32-le", None),
+            ("utf-16-be", None),
+            ("utf-16-le", None),
+            ("utf-8", None),
+            # With byte order mark (BOM)
+            ("utf-16", None),
+            ("utf-32", None),
+            ("utf-8-sig", None),
+            # Override
+            ("utf-8", "utf-8"),
+            ("cp949", "cp949"),
+        ],
+    )
+    def test_json(self, monkeypatch: pytest.MonkeyPatch, encoding: str, override: str | None):
+        mock_content = PropertyMock(return_value='{"test": "Α and Ω"}'.encode(encoding))  # noqa: RUF001
         monkeypatch.setattr("requests.Response.content", mock_content)
 
         res = requests.Response()
         res.encoding = override
 
         assert HTTPSession.json(res) == {"test": "Α and Ω"}  # noqa: RUF001
+
+    @pytest.mark.parametrize(
+        ("content_type", "encoding", "content", "expected"),
+        [
+            pytest.param(
+                "text/html",
+                None,
+                b"B\xe4r",
+                "ISO-8859-1",
+                id="default-iso-8859-1-charset-for-text",
+            ),
+            pytest.param(
+                "application/json",
+                None,
+                b"B\xc3\xa4r",
+                "utf-8",
+                id="default-utf-8-charset-for-json",
+            ),
+            pytest.param(
+                'text/html; charset="ISO-8859-1"',
+                None,
+                b"B\xe4r",
+                "ISO-8859-1",
+                id="declared-iso-8859-1-charset",
+            ),
+            pytest.param(
+                'text/html; charset="utf-8"',
+                None,
+                b"B\xc3\xa4r",
+                "utf-8",
+                id="declared-utf-8-charset",
+            ),
+            pytest.param(
+                "text/html",
+                "utf-8",
+                b"B\xc3\xa4r",
+                "utf-8",
+                id="override-missing-charset",
+            ),
+            pytest.param(
+                'text/html; charset="ISO-8859-1"',
+                "utf-8",
+                b"B\xc3\xa4r",
+                "utf-8",
+                id="override-incorrect-charset",
+            ),
+            pytest.param(
+                'text/html; charset="utf-8"',
+                "utf-8",
+                b"B\xc3\xa4r",
+                "utf-8",
+                id="override-same-charset",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["get", "post", "head", "put", "patch", "delete"])
+    def test_encoding_override(
+        self,
+        requests_mock: rm.Mocker,
+        method: str,
+        content_type: str,
+        encoding: str,
+        content: bytes,
+        expected: str,
+    ):
+        requests_mock.register_uri(rm.ANY, "http://mocked", headers={"Content-Type": content_type}, content=content)
+        httpsession = HTTPSession()
+        res = getattr(httpsession, method)("http://mocked", encoding=encoding)
+        assert res.encoding == expected
+        assert res.text == "Bär"
 
 
 class TestHTTPAdapters:

@@ -1,12 +1,19 @@
+from __future__ import annotations
+
 from contextlib import nullcontext
+from typing import TYPE_CHECKING
 
 import pytest
-import requests_mock as rm
 
-from streamlink import Streamlink
 from streamlink.exceptions import NoStreamsError
 from streamlink.plugins.vk import VK
 from tests.plugins import PluginCanHandleUrl
+
+
+if TYPE_CHECKING:
+    import requests_mock as rm
+
+    from streamlink import Streamlink
 
 
 does_not_raise = nullcontext()
@@ -77,7 +84,6 @@ class TestPluginCanHandleUrlVK(PluginCanHandleUrl):
             does_not_raise,
             id="from-meta-og-url",
         ),
-
         # no video ID
         pytest.param(
             "https://vk.com/videos-0123456789?z=",

@@ -1,13 +1,14 @@
-import re
+from __future__ import annotations
+
 import ssl
 import time
 import warnings
-from typing import Any, Dict, Pattern, Tuple
+from typing import TYPE_CHECKING, Any
 
-import requests.adapters
 import urllib3
-from requests import PreparedRequest, Request, Session
+from requests import Request, Session
 from requests.adapters import HTTPAdapter
+from urllib3.util import create_urllib3_context  # type: ignore[attr-defined]
 
 import streamlink.session.http_useragents as useragents
 from streamlink.exceptions import PluginError, StreamlinkDeprecationWarning
@@ -15,43 +16,14 @@ from streamlink.packages.requests_file import FileAdapter
 from streamlink.utils.parse import parse_json, parse_xml
 
 
-try:
-    from urllib3.util import create_urllib3_context  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover
-    # urllib3 <2.0.0 compat import
-    from urllib3.util.ssl_ import create_urllib3_context
+if TYPE_CHECKING:
+    import re
+
+    from requests import PreparedRequest
 
 
-# urllib3>=2.0.0: enforce_content_length now defaults to True (keep the override for backwards compatibility)
-class _HTTPResponse(urllib3.response.HTTPResponse):
-    def __init__(self, *args, **kwargs):
-        # Always enforce content length validation!
-        # This fixes a bug in requests which doesn't raise errors on HTTP responses where
-        # the "Content-Length" header doesn't match the response's body length.
-        # https://github.com/psf/requests/issues/4956#issuecomment-573325001
-        #
-        # Summary:
-        # This bug is related to urllib3.response.HTTPResponse.stream() which calls urllib3.response.HTTPResponse.read() as
-        # a wrapper for http.client.HTTPResponse.read(amt=...), where no http.client.IncompleteRead exception gets raised
-        # due to "backwards compatiblity" of an old bug if a specific amount is attempted to be read on an incomplete response.
-        #
-        # urllib3.response.HTTPResponse.read() however has an additional check implemented via the enforce_content_length
-        # parameter, but it doesn't check by default and requests doesn't set the parameter for enabling it either.
-        #
-        # Fix this by overriding urllib3.response.HTTPResponse's constructor and always setting enforce_content_length to True,
-        # as there is no way to make requests set this parameter on its own.
-        kwargs["enforce_content_length"] = True
-        super().__init__(*args, **kwargs)
-
-
-# override all urllib3.response.HTTPResponse references in requests.adapters.HTTPAdapter.send
-urllib3.connectionpool.HTTPConnectionPool.ResponseCls = _HTTPResponse  # type: ignore[attr-defined]
-requests.adapters.HTTPResponse = _HTTPResponse  # type: ignore[misc]
-
-
-# Never convert percent-encoded characters to uppercase in urllib3>=1.25.8.
+# Never convert percent-encoded characters to uppercase in urllib3>=2.0.0.
 # This is required for sites which compare request URLs byte by byte and return different responses depending on that.
-# Older versions of urllib3 are not compatible with this override and will always convert to uppercase characters.
 #
 # https://datatracker.ietf.org/doc/html/rfc3986#section-2.1
 # > The uppercase hexadecimal digits 'A' through 'F' are equivalent to
@@ -61,32 +33,30 @@ requests.adapters.HTTPResponse = _HTTPResponse  # type: ignore[misc]
 # > normalizers should use uppercase hexadecimal digits for all percent-
 # > encodings.
 class Urllib3UtilUrlPercentReOverride:
-    # urllib3>=2.0.0: _PERCENT_RE, urllib3<2.0.0: PERCENT_RE
-    _re_percent_encoding: Pattern \
-        = getattr(urllib3.util.url, "_PERCENT_RE", getattr(urllib3.util.url, "PERCENT_RE", re.compile(r"%[a-fA-F0-9]{2}")))
+    # noinspection PyProtectedMember
+    _re_percent_encoding: re.Pattern = urllib3.util.url._PERCENT_RE  # type: ignore[attr-defined]
 
-    # urllib3>=1.25.8
-    # https://github.com/urllib3/urllib3/blame/1.25.8/src/urllib3/util/url.py#L219-L227
+    # noinspection PyUnusedLocal
+    # https://github.com/urllib3/urllib3/blob/2.0.0/src/urllib3/util/url.py#L241-L243
     @classmethod
-    def subn(cls, repl: Any, string: str, count: Any = None) -> Tuple[str, int]:
+    def subn(cls, repl: Any, string: str, count: Any = None) -> tuple[str, int]:
         return string, len(cls._re_percent_encoding.findall(string))
 
 
-# urllib3>=2.0.0: _PERCENT_RE, urllib3<2.0.0: PERCENT_RE
-urllib3.util.url._PERCENT_RE = urllib3.util.url.PERCENT_RE = Urllib3UtilUrlPercentReOverride  # type: ignore[attr-defined]
+urllib3.util.url._PERCENT_RE = Urllib3UtilUrlPercentReOverride  # type: ignore[attr-defined]
 
 
 # requests.Request.__init__ keywords, except for "hooks"
-_VALID_REQUEST_ARGS = "method", "url", "headers", "files", "data", "params", "auth", "cookies", "json"
+_VALID_REQUEST_ARGS = {"method", "url", "headers", "files", "data", "params", "auth", "cookies", "json"}
 
 
 class HTTPSession(Session):
-    params: Dict
+    params: dict
 
     def __init__(self):
         super().__init__()
 
-        self.headers["User-Agent"] = useragents.FIREFOX
+        self.headers["User-Agent"] = useragents.DEFAULT
         self.timeout = 20.0
 
         self.mount("file://", FileAdapter())
@@ -106,13 +76,13 @@ class HTTPSession(Session):
         warnings.warn("Deprecated HTTPSession.determine_json_encoding() call", StreamlinkDeprecationWarning, stacklevel=1)
         data = int.from_bytes(sample[:4], "big")
 
-        if data & 0xffffff00 == 0:
+        if data & 0xFFFFFF00 == 0:
             return "UTF-32BE"
-        elif data & 0xff00ff00 == 0:
+        elif data & 0xFF00FF00 == 0:
             return "UTF-16BE"
-        elif data & 0x00ffffff == 0:
+        elif data & 0x00FFFFFF == 0:
             return "UTF-32LE"
-        elif data & 0x00ff00ff == 0:
+        elif data & 0x00FF00FF == 0:
             return "UTF-16LE"
         else:
             return "UTF-8"
@@ -137,7 +107,7 @@ class HTTPSession(Session):
         return self.get(url, stream=True).url
 
     @staticmethod
-    def valid_request_args(**req_keywords) -> Dict:
+    def valid_request_args(**req_keywords) -> dict:
         return {k: v for k, v in req_keywords.items() if k in _VALID_REQUEST_ARGS}
 
     def prepare_new_request(self, **req_keywords) -> PreparedRequest:
@@ -150,6 +120,7 @@ class HTTPSession(Session):
 
     def request(self, method, url, *args, **kwargs):
         acceptable_status = kwargs.pop("acceptable_status", [])
+        encoding = kwargs.pop("encoding", None)
         exception = kwargs.pop("exception", PluginError)
         headers = kwargs.pop("headers", {})
         params = kwargs.pop("params", {})
@@ -191,9 +162,11 @@ class HTTPSession(Session):
                     raise err from None  # TODO: fix this
                 retries += 1
                 # back off retrying, but only to a maximum sleep time
-                delay = min(retry_max_backoff,
-                            retry_backoff * (2 ** (retries - 1)))
+                delay = min(retry_max_backoff, retry_backoff * (2 ** (retries - 1)))
                 time.sleep(delay)
+
+        if encoding is not None:
+            res.encoding = encoding
 
         if schema:
             res = schema.validate(res.text, name="response text", exception=PluginError)

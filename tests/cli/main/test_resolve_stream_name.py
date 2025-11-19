@@ -1,10 +1,16 @@
-from typing import Mapping
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
 
 from streamlink.stream.stream import Stream
 from streamlink_cli.main import resolve_stream_name
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 @pytest.fixture(scope="module")

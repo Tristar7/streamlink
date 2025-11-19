@@ -1,18 +1,23 @@
+from __future__ import annotations
+
 import errno
-import sys
 from collections import deque
 from pathlib import Path
 from threading import Thread
-from typing import Callable, Deque, List, Union
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, patch
 
 import pytest
 
 from streamlink.stream.stream import StreamIO
+from streamlink_cli.console.progress import Progress
 from streamlink_cli.output import FileOutput, HTTPOutput, PlayerOutput
 from streamlink_cli.streamrunner import PlayerPollThread, StreamRunner, log as streamrunnerlogger
-from streamlink_cli.utils.progress import Progress
 from tests.testutils.handshake import Handshake
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 TIMEOUT_AWAIT_HANDSHAKE = 1
@@ -43,7 +48,7 @@ class FakeStream(_TestableWithHandshake, StreamIO):
 
     def __init__(self) -> None:
         super().__init__()
-        self.data: Deque[Union[bytes, Callable]] = deque()
+        self.data: deque[bytes | Callable] = deque()
 
     # noinspection PyUnusedLocal
     def read(self, *args):
@@ -59,7 +64,7 @@ class FakeOutput(_TestableWithHandshake):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.data: List[bytes] = []
+        self.data: list[bytes] = []
 
     def write(self, data):
         with self.handshake():
@@ -153,25 +158,28 @@ class TestPlayerOutput:
         return player_process
 
     @pytest.fixture()
-    def output(self, player_process: Mock):
-        with patch("subprocess.Popen") as mock_popen, \
-             patch("streamlink_cli.output.player.sleep"):
-            mock_popen.return_value = player_process
-            output = FakePlayerOutput(Path("mocked"))
-            output.open()
+    def output(self, monkeypatch: pytest.MonkeyPatch, player_process: Mock):
+        mock_popen = Mock(return_value=player_process)
+        monkeypatch.setattr("subprocess.Popen", mock_popen)
+        monkeypatch.setattr("streamlink_cli.output.player.sleep", Mock())
+
+        output = FakePlayerOutput(Path("mocked"))
+        output.open()
+        try:
             yield output
+        finally:
             output.close()
 
     @pytest.fixture()
-    def stream_runner(self, stream: FakeStream, output: FakePlayerOutput):
-        with patch("streamlink_cli.streamrunner.PlayerPollThread", EventedPlayerPollThread):
-            stream_runner = StreamRunner(stream, output)
-            assert isinstance(stream_runner.playerpoller, EventedPlayerPollThread)
-            assert not stream_runner.playerpoller.is_alive()
-            assert not stream_runner.is_http
-            assert not stream_runner.progress
-            yield stream_runner
-            assert not stream_runner.playerpoller.is_alive()
+    def stream_runner(self, monkeypatch: pytest.MonkeyPatch, stream: FakeStream, output: FakePlayerOutput):
+        monkeypatch.setattr("streamlink_cli.streamrunner.PlayerPollThread", EventedPlayerPollThread)
+        stream_runner = StreamRunner(stream, output)
+        assert isinstance(stream_runner.playerpoller, EventedPlayerPollThread)
+        assert not stream_runner.playerpoller.is_alive()
+        assert not isinstance(stream_runner.output, HTTPOutput)
+        assert not stream_runner.progress
+        yield stream_runner
+        assert not stream_runner.playerpoller.is_alive()
 
     @pytest.mark.trio()
     async def test_read_write(
@@ -452,7 +460,7 @@ class TestHTTPServer:
         stream_runner = StreamRunner(stream, output)
         assert not stream_runner.playerpoller
         assert not stream_runner.progress
-        assert stream_runner.is_http
+        assert isinstance(stream_runner.output, HTTPOutput)
         return stream_runner
 
     @pytest.mark.trio()
@@ -544,82 +552,8 @@ class TestHTTPServer:
         expectedlogs = (
             ([("streamrunner", "info", "HTTP connection closed")] if logs else [])
             + [("streamrunner", "info", "Stream ended")]
-        )
+        )  # fmt: skip
         assert [(record.module, record.levelname, record.message) for record in caplog.records] == expectedlogs
-
-
-class TestHasProgress:
-    @pytest.mark.parametrize(
-        ("output", "stderr"),
-        [
-            pytest.param(
-                FakePlayerOutput(Path("mocked")),
-                True,
-                id="Player output without record",
-            ),
-            pytest.param(
-                FakeFileOutput(fd=Mock()),
-                True,
-                id="FileOutput with file descriptor",
-            ),
-            pytest.param(
-                FakeHTTPOutput(),
-                True,
-                id="HTTPServer",
-            ),
-            pytest.param(
-                FakeFileOutput(filename=Path("mocked")),
-                False,
-                id="no-stderr",
-            ),
-        ],
-    )
-    def test_no_progress(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        output: Union[FakePlayerOutput, FakeFileOutput, FakeHTTPOutput],
-        stderr: bool,
-    ):
-        if not stderr:
-            monkeypatch.setattr("sys.stderr", None)
-        stream_runner = FakeStreamRunner(StreamIO(), output, show_progress=True)
-        assert not stream_runner.progress
-
-    @pytest.mark.parametrize(
-        ("output", "expected"),
-        [
-            pytest.param(
-                FakePlayerOutput(Path("mocked"), record=FakeFileOutput(Path("record"))),
-                Path("record"),
-                id="PlayerOutput with record",
-            ),
-            pytest.param(
-                FakeFileOutput(filename=Path("filename")),
-                Path("filename"),
-                id="FileOutput with file name",
-            ),
-            pytest.param(
-                FakeFileOutput(record=FakeFileOutput(filename=Path("record"))),
-                Path("record"),
-                id="FileOutput with record",
-            ),
-            pytest.param(
-                FakeFileOutput(filename=Path("filename"), record=FakeFileOutput(filename=Path("record"))),
-                Path("filename"),
-                id="FileOutput with file name and record",
-            ),
-        ],
-    )
-    def test_has_progress(
-        self,
-        output: Union[FakePlayerOutput, FakeFileOutput],
-        expected: Path,
-    ):
-        stream_runner = FakeStreamRunner(StreamIO(), output, show_progress=True)
-        assert stream_runner.progress
-        assert not stream_runner.progress.is_alive()
-        assert stream_runner.progress.stream is sys.stderr
-        assert stream_runner.progress.path == expected
 
 
 class TestProgress:
@@ -628,16 +562,17 @@ class TestProgress:
         return FakeFileOutput(Path("filename"))
 
     @pytest.fixture()
-    def stream_runner(self, stream: FakeStream, output: FakeFileOutput):
-        with patch("streamlink_cli.streamrunner.Progress", FakeProgress):
-            stream_runner = FakeStreamRunner(stream, output, show_progress=True)
-            assert not stream_runner.playerpoller
-            assert not stream_runner.is_http
-            assert isinstance(stream_runner.progress, FakeProgress)
-            assert stream_runner.progress.path == Path("filename")
-            assert not stream_runner.progress.is_alive()
-            yield stream_runner
-            assert not stream_runner.progress.is_alive()
+    def progress(self):
+        return FakeProgress(console=Mock(), path=Path("filename"))
+
+    @pytest.fixture()
+    def stream_runner(self, stream: FakeStream, output: FakeFileOutput, progress: FakeProgress):
+        stream_runner = FakeStreamRunner(stream, output, progress=progress)
+        assert not stream_runner.playerpoller
+        assert stream_runner.progress is progress
+        assert not stream_runner.progress.is_alive()
+        yield stream_runner
+        assert not stream_runner.progress.is_alive()
 
     @pytest.mark.trio()
     async def test_read_write(

@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 import logging
 import sys
 import warnings
 from logging import CRITICAL, DEBUG, ERROR, INFO, WARNING
-from os import devnull
 from pathlib import Path
 from sys import version_info
 from threading import Lock
-from typing import IO, TYPE_CHECKING, Iterator, List, Literal, Optional, Union
+from typing import IO, TYPE_CHECKING, Literal
 
 # noinspection PyProtectedMember
 from warnings import WarningMessage
@@ -15,7 +16,11 @@ from streamlink.exceptions import StreamlinkWarning
 from streamlink.utils.times import fromlocaltimestamp
 
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+if TYPE_CHECKING:
     _BaseLoggerClass = logging.Logger
 else:
     _BaseLoggerClass = logging.getLoggerClass()
@@ -69,12 +74,15 @@ def _logmethodfactory(level: int, name: str):
     # fix module name that gets read from the call stack in the logging module
     # https://github.com/python/cpython/commit/5ca6d7469be53960843df39bb900e9c3359f127f
     if version_info >= (3, 11):
+
         def method(self, message, *args, **kws):
             if self.isEnabledFor(level):
                 # increase the stacklevel by one and skip the `trace()` call here
                 kws["stacklevel"] = 2
                 self._log(level, message, args, **kws)
+
     else:
+
         def method(self, message, *args, **kws):
             if self.isEnabledFor(level):
                 self._log(level, message, args, **kws)
@@ -95,7 +103,7 @@ _config_lock = Lock()
 
 
 class StringFormatter(logging.Formatter):
-    def __init__(self, *args, remove_base: Optional[List[str]] = None, **kwargs):
+    def __init__(self, *args, remove_base: list[str] | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         self._remove_base = remove_base or []
         self._usesTime = super().usesTime()
@@ -140,8 +148,6 @@ class StreamHandler(logging.StreamHandler):
         return res
 
     def _stream_reconfigure(self):
-        if not self.stream:
-            return
         # make stream write calls escape unsupported characters (stdout/stderr encoding is not guaranteed to be utf-8)
         self.stream.reconfigure(errors="backslashreplace")
 
@@ -182,8 +188,7 @@ def _showwarning(message, category, filename, lineno, file=None, line=None):
         return
 
     warning = WarningMessage(message, category, filename, lineno, None, line)
-    kwargs = {"stacklevel": 2} if sys.version_info >= (3, 8) else {}
-    root.log(WARNING, warning, **kwargs)
+    root.log(WARNING, warning, stacklevel=2)
 
 
 def capturewarnings(capture=False):
@@ -201,36 +206,35 @@ def capturewarnings(capture=False):
 
 # noinspection PyShadowingBuiltins,PyPep8Naming
 def basicConfig(
-    filename: Optional[Union[str, Path]] = None,
+    *,
+    filename: str | Path | None = None,
     filemode: str = "a",
-    stream: Optional[IO] = None,
-    level: Optional[str] = None,
-    format: str = FORMAT_BASE,  # noqa: A002  # TODO: rename to "fmt" (breaking)
-    style: Literal["%", "{", "$"] = FORMAT_STYLE,
+    format: str = FORMAT_BASE,  # noqa: A002
     datefmt: str = FORMAT_DATE,
-    remove_base: Optional[List[str]] = None,
+    style: Literal["%", "{", "$"] = FORMAT_STYLE,
+    level: str | None = None,
+    stream: IO | None = None,
+    remove_base: list[str] | None = None,
     capture_warnings: bool = False,
-) -> logging.StreamHandler:
+) -> logging.StreamHandler | None:
     with _config_lock:
-        handler: logging.StreamHandler
+        handler: logging.StreamHandler | None = None
         if filename is not None:
             handler = logging.FileHandler(filename, filemode, encoding="utf-8")
-        else:
+        elif stream is not None:
             handler = StreamHandler(stream)
-            # logging.StreamHandler internally falls back to sys.stderr if stream is None
-            # sys.stderr however can also be None if fd2 doesn't exist, so use a devnull FileHandler in this case instead
-            if not handler.stream:
-                handler = logging.FileHandler(devnull)
 
-        formatter = StringFormatter(
-            fmt=format,
-            datefmt=datefmt,
-            style=style,
-            remove_base=remove_base or REMOVE_BASE,
-        )
-        handler.setFormatter(formatter)
+        if handler is not None:
+            formatter = StringFormatter(
+                fmt=format,
+                datefmt=datefmt,
+                style=style,
+                remove_base=remove_base or REMOVE_BASE,
+            )
+            handler.setFormatter(formatter)
 
-        root.addHandler(handler)
+            root.addHandler(handler)
+
         if level is not None:
             root.setLevel(level)
 

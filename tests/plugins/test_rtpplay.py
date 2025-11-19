@@ -1,10 +1,18 @@
-import pytest
-from requests_mock import Mocker
+from __future__ import annotations
 
-from streamlink import Streamlink
+from typing import TYPE_CHECKING
+
+import pytest
+
 from streamlink.plugins.rtpplay import RTPPlay
 from tests.plugins import PluginCanHandleUrl
 from tests.resources import text
+
+
+if TYPE_CHECKING:
+    from requests_mock import Mocker
+
+    from streamlink import Streamlink
 
 
 class TestPluginCanHandleUrlRTPPlay(PluginCanHandleUrl):
@@ -61,27 +69,31 @@ class TestRTPPlay:
 
         return plugin._get_streams()
 
-    @pytest.mark.parametrize(("streams", "expected"), [
-        pytest.param(
-            "",
-            False,
-            id="empty",
-        ),
-        pytest.param(
-            _content_pre + _content_invalid,
-            False,
-            id="invalid",
-        ),
-        pytest.param(
-            _content_pre + _content_valid,
-            True,
-            id="valid",
-        ),
-        pytest.param(
-            _content_pre + _content_valid_b64,
-            True,
-            id="valid-b64",
-        ),
-    ], indirect=["streams"])
+    @pytest.mark.parametrize(
+        ("streams", "expected"),
+        [
+            pytest.param(
+                "",
+                False,
+                id="empty",
+            ),
+            pytest.param(
+                _content_pre + _content_invalid,
+                False,
+                id="invalid",
+            ),
+            pytest.param(
+                _content_pre + _content_valid,
+                True,
+                id="valid",
+            ),
+            pytest.param(
+                _content_pre + _content_valid_b64,
+                True,
+                id="valid-b64",
+            ),
+        ],
+        indirect=["streams"],
+    )
     def test_streams(self, streams, expected):
         assert (streams is not None) is expected

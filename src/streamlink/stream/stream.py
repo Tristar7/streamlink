@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import io
 import json
 import logging
+from typing import TYPE_CHECKING
 
-from streamlink.session import Streamlink
+
+if TYPE_CHECKING:
+    from streamlink.session import Streamlink
 
 
 log = logging.getLogger(__name__)
@@ -51,7 +56,7 @@ class Stream:
     def to_manifest_url(self):
         raise TypeError(f"<{self.__class__.__name__} [{self.shortname()}]> cannot be translated to a manifest URL")
 
-    def open(self) -> "StreamIO":
+    def open(self) -> StreamIO:
         """
         Attempts to open a connection to the stream.
         Returns a file-like object that can be used to read the stream data.

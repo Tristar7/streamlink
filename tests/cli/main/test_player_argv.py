@@ -1,11 +1,17 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import ANY, Mock, call
 
 import pytest
 
 import streamlink_cli.main
 import tests
-from streamlink import Streamlink
+
+
+if TYPE_CHECKING:
+    from streamlink import Streamlink
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +31,7 @@ def _player_setup(monkeypatch: pytest.MonkeyPatch):
 def mock_subprocess(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
     param = getattr(request, "param", {})
     popen = param.get("popen", [])
-    _call = param.get("call", [])
+    call_ = param.get("call", [])
 
     mock_call = Mock()
     monkeypatch.setattr("streamlink_cli.output.player.subprocess.call", mock_call)
@@ -41,7 +47,7 @@ def mock_subprocess(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPa
         assert mock_call.call_args_list == []
     else:
         assert mock_popen.call_args_list == []
-        assert mock_call.call_args_list == [call(_call, env=ANY, stdout=ANY, stderr=ANY)]
+        assert mock_call.call_args_list == [call(call_, env=ANY, stdout=ANY, stderr=ANY)]
 
 
 @pytest.fixture(autouse=True)
@@ -65,8 +71,8 @@ def _test(argv: list, mock_subprocess: Mock):
             id="player-args-single-hyphen-ghissue-971",
         ),
         pytest.param(
-            ["-p", "player", "-a", "--input-title-format \"foo \\\"bar\\\"\"", "--player-passthrough=hls", "test.se", "hls"],
-            {"call": ["player", "--input-title-format", "foo \"bar\"", "http://test.se/playlist.m3u8"]},
+            ["-p", "player", "-a", '--input-title-format "foo \\"bar\\""', "--player-passthrough=hls", "test.se", "hls"],
+            {"call": ["player", "--input-title-format", 'foo "bar"', "http://test.se/playlist.m3u8"]},
             id="player-passthrough",
         ),
     ],

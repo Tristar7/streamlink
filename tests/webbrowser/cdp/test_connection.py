@@ -1,21 +1,31 @@
+from __future__ import annotations
+
 import contextlib
 from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
-from typing import Dict, Generator, Optional, Type
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
 import pytest
 import trio
-from trio.testing import MockClock, wait_all_tasks_blocked
+from trio.testing import wait_all_tasks_blocked
 from trio_websocket import CloseReason, ConnectionClosed, ConnectionTimeout  # type: ignore[import]
 
 from streamlink.compat import ExceptionGroup
-from streamlink.webbrowser.cdp.connection import MAX_BUFFER_SIZE, CDPConnection, CDPEventListener, CDPSession
+from streamlink.webbrowser.cdp.connection import MAX_BUFFER_SIZE, CDPConnection, CDPSession
 from streamlink.webbrowser.cdp.devtools.target import SessionID, TargetID
-from streamlink.webbrowser.cdp.devtools.util import T_JSON_DICT
 from streamlink.webbrowser.cdp.exceptions import CDPError
 from tests.webbrowser.cdp import FakeWebsocketConnection
+
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from trio.testing import MockClock
+
+    from streamlink.webbrowser.cdp.connection import CDPEventListener
+    from streamlink.webbrowser.cdp.devtools.util import T_JSON_DICT
 
 
 EPSILON = 0.1
@@ -84,12 +94,15 @@ class TestCreateConnection:
         assert excinfo.group_contains(ConnectionTimeout)
 
     @pytest.mark.trio()
-    @pytest.mark.parametrize(("timeout", "expected"), [
-        pytest.param(None, 2, id="Default value of 2 seconds"),
-        pytest.param(0, 2, id="No timeout uses default value"),
-        pytest.param(3, 3, id="Custom timeout value"),
-    ])
-    async def test_timeout(self, websocket_connection: FakeWebsocketConnection, timeout: Optional[int], expected: int):
+    @pytest.mark.parametrize(
+        ("timeout", "expected"),
+        [
+            pytest.param(None, 2, id="Default value of 2 seconds"),
+            pytest.param(0, 2, id="No timeout uses default value"),
+            pytest.param(3, 3, id="Custom timeout value"),
+        ],
+    )
+    async def test_timeout(self, websocket_connection: FakeWebsocketConnection, timeout: int | None, expected: int):
         async with CDPConnection.create("ws://localhost:1234/fake", timeout=timeout) as cdp_conn:
             pass
         assert cdp_conn.cmd_timeout == expected
@@ -137,42 +150,45 @@ def raises_group(*group_contains):
 class TestSend:
     # noinspection PyUnusedLocal
     @pytest.mark.trio()
-    @pytest.mark.parametrize(("timeout", "jump", "raises"), [
-        pytest.param(
-            None,
-            2 - EPSILON,
-            nullcontext(),
-            id="Default timeout, response in time",
-        ),
-        pytest.param(
-            None,
-            2,
-            raises_group(
-                ((CDPError,), {"match": "^Sending CDP message and receiving its response timed out$"}, True),
+    @pytest.mark.parametrize(
+        ("timeout", "jump", "raises"),
+        [
+            pytest.param(
+                None,
+                2 - EPSILON,
+                nullcontext(),
+                id="Default timeout, response in time",
             ),
-            id="Default timeout, response not in time",
-        ),
-        pytest.param(
-            3,
-            3 - EPSILON,
-            nullcontext(),
-            id="Custom timeout, response in time",
-        ),
-        pytest.param(
-            3,
-            3,
-            raises_group(
-                ((CDPError,), {"match": "^Sending CDP message and receiving its response timed out$"}, True),
+            pytest.param(
+                None,
+                2,
+                raises_group(
+                    ((CDPError,), {"match": "^Sending CDP message and receiving its response timed out$"}, True),
+                ),
+                id="Default timeout, response not in time",
             ),
-            id="Custom timeout, response not in time",
-        ),
-    ])
+            pytest.param(
+                3,
+                3 - EPSILON,
+                nullcontext(),
+                id="Custom timeout, response in time",
+            ),
+            pytest.param(
+                3,
+                3,
+                raises_group(
+                    ((CDPError,), {"match": "^Sending CDP message and receiving its response timed out$"}, True),
+                ),
+                id="Custom timeout, response not in time",
+            ),
+        ],
+    )
     async def test_timeout(
         self,
         cdp_connection: CDPConnection,
         websocket_connection: FakeWebsocketConnection,
         autojump_clock: MockClock,
-        timeout: Optional[float],
+        timeout: float | None,
         jump: float,
         raises: nullcontext,
     ):
@@ -578,18 +594,21 @@ class TestSession:
 class TestHandleEvent:
     @pytest.fixture(autouse=True)
     def event_parsers(self, monkeypatch: pytest.MonkeyPatch):
-        event_parsers: Dict[str, Type] = {
+        event_parsers: dict[str, type] = {
             "Fake.fakeEvent": FakeEvent,
         }
         monkeypatch.setattr("streamlink.webbrowser.cdp.devtools.util._event_parsers", event_parsers)
         return event_parsers
 
     @pytest.mark.trio()
-    @pytest.mark.parametrize("message", [
-        pytest.param("""{"foo":"bar"}""", id="Missing method and params"),
-        pytest.param("""{"method":"method"}""", id="Missing params"),
-        pytest.param("""{"params":{}}""", id="Missing method"),
-    ])
+    @pytest.mark.parametrize(
+        "message",
+        [
+            pytest.param("""{"foo":"bar"}""", id="Missing method and params"),
+            pytest.param("""{"method":"method"}""", id="Missing params"),
+            pytest.param("""{"params":{}}""", id="Missing method"),
+        ],
+    )
     async def test_invalid_event(
         self,
         caplog: pytest.LogCaptureFixture,

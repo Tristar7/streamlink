@@ -1,13 +1,21 @@
+from __future__ import annotations
+
 import sys
-from typing import Awaitable, Callable, Optional, Tuple
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, call
 
 import pytest
 import trio
-from trio.testing import MockClock, wait_all_tasks_blocked
+from trio.testing import wait_all_tasks_blocked
 
 from streamlink.compat import ExceptionGroup
 from streamlink.utils.processoutput import ProcessOutput
+
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from trio.testing import MockClock
 
 
 TIME_TEST_MAX = 10
@@ -34,8 +42,8 @@ class FakeProcessOutput(ProcessOutput):
     onstdout: Mock
     onstderr: Mock
 
-    onoutput_sender: trio.MemorySendChannel[Tuple[str, str]]
-    onoutput_receiver: trio.MemoryReceiveChannel[Tuple[str, str]]
+    onoutput_sender: trio.MemorySendChannel[tuple[str, str]]
+    onoutput_receiver: trio.MemoryReceiveChannel[tuple[str, str]]
 
     def __init__(self, *args, ignoresigterm: bool = False, **kwargs):
         command = [sys.executable, "-c", CODE]
@@ -251,7 +259,7 @@ async def test_output_exception(get_process: Callable[[], Awaitable[trio.Process
 
     po = CustomFakeProcessOutput(timeout=4)
     # noinspection PyUnusedLocal
-    process: Optional[trio.Process] = None
+    process: trio.Process | None = None
 
     with pytest.raises(ExceptionGroup) as exc_info:  # noqa: PT012
         async with trio.open_nursery() as nursery:

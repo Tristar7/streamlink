@@ -1,4 +1,3 @@
-# TODO: trio>0.22 release: remove __future__ import (generic memorychannels)
 from __future__ import annotations
 
 import dataclasses
@@ -7,32 +6,40 @@ import json
 import logging
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Dict, Generator, Generic, Optional, Set, Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Generic, TypeAlias, TypeVar, cast
 
 import trio
-from trio_websocket import ConnectionClosed, WebSocketConnection, connect_websocket_url  # type: ignore[import]
+from trio_websocket import ConnectionClosed, connect_websocket_url  # type: ignore[import]
 
 from streamlink.logger import ALL, ERROR, WARNING
-from streamlink.webbrowser.cdp.devtools.target import SessionID, TargetID, attach_to_target, create_target
-from streamlink.webbrowser.cdp.devtools.util import T_JSON_DICT, parse_json_event
+from streamlink.webbrowser.cdp.devtools.target import SessionID, attach_to_target, create_target
+from streamlink.webbrowser.cdp.devtools.util import parse_json_event
 from streamlink.webbrowser.cdp.exceptions import CDPError
 
 
-try:
-    from typing import Self, TypeAlias  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover
-    from typing_extensions import Self, TypeAlias
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, Generator
+
+    from trio_websocket import WebSocketConnection
+
+    from streamlink.webbrowser.cdp.devtools.target import TargetID
+    from streamlink.webbrowser.cdp.devtools.util import T_JSON_DICT
+
+    try:
+        from typing import Self  # type: ignore[attr-defined]
+    except ImportError:
+        from typing_extensions import Self
 
 
 log = logging.getLogger(__name__)
 
 MAX_BUFFER_SIZE = 10
-MAX_MESSAGE_SIZE = 2 ** 24  # ~16MiB
+MAX_MESSAGE_SIZE = 2**24  # ~16MiB
 CMD_TIMEOUT = 2
 
 TCmdResponse = TypeVar("TCmdResponse")
 TEvent = TypeVar("TEvent")
-TEventChannels: TypeAlias = "Dict[Type[TEvent], Set[trio.MemorySendChannel[TEvent]]]"
+TEventChannels: TypeAlias = "dict[type[TEvent], set[trio.MemorySendChannel[TEvent]]]"
 
 
 class CDPEventListener(Generic[TEvent]):
@@ -60,7 +67,7 @@ class CDPEventListener(Generic[TEvent]):
     _sender: trio.MemorySendChannel[TEvent]
     _receiver: trio.MemoryReceiveChannel[TEvent]
 
-    def __init__(self, event_channels: TEventChannels, event: Type[TEvent], max_buffer_size: Optional[int] = None):
+    def __init__(self, event_channels: TEventChannels, event: type[TEvent], max_buffer_size: int | None = None):
         max_buffer_size = MAX_BUFFER_SIZE if max_buffer_size is None else max_buffer_size
         self._sender, self._receiver = trio.open_memory_channel(max_buffer_size)
         event_channels[event].add(self._sender)
@@ -99,10 +106,10 @@ class CDPEventListener(Generic[TEvent]):
 @dataclasses.dataclass
 class _CDPCmdBuffer(Generic[TCmdResponse]):
     cmd: Generator[dict, dict, TCmdResponse]
-    response: Optional[Union[TCmdResponse, Exception]] = None
+    response: TCmdResponse | Exception | None = None
     event: trio.Event = dataclasses.field(default_factory=trio.Event)
 
-    def set_response(self, response: Union[TCmdResponse, Exception]) -> None:
+    def set_response(self, response: TCmdResponse | Exception) -> None:
         self.response = response
         self.event.set()
 
@@ -147,8 +154,8 @@ class CDPBase:
     def __init__(
         self,
         websocket: WebSocketConnection,
-        target_id: Optional[TargetID] = None,
-        session_id: Optional[SessionID] = None,
+        target_id: TargetID | None = None,
+        session_id: SessionID | None = None,
         cmd_timeout: float = CMD_TIMEOUT,
     ) -> None:
         self.websocket = websocket
@@ -156,13 +163,13 @@ class CDPBase:
         self.session_id = session_id
         self.cmd_timeout = cmd_timeout
         self.event_channels: TEventChannels = defaultdict(set)
-        self.cmd_buffers: Dict[int, _CDPCmdBuffer] = {}
+        self.cmd_buffers: dict[int, _CDPCmdBuffer] = {}
         self.cmd_id = itertools.count()
 
     async def send(
         self,
         cmd: Generator[T_JSON_DICT, T_JSON_DICT, TCmdResponse],
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> TCmdResponse:
         """
         Send a specific CDP command and await its response.
@@ -197,7 +204,7 @@ class CDPBase:
             self.cmd_buffers.pop(cmd_id, None)
             raise CDPError("Sending CDP message and receiving its response timed out")
 
-        response = cast(TCmdResponse, cmd_buffer.response)
+        response = cast("TCmdResponse", cmd_buffer.response)
         self.cmd_buffers.pop(cmd_id, None)
 
         if isinstance(response, Exception):
@@ -205,7 +212,7 @@ class CDPBase:
 
         return response
 
-    def listen(self, event: Type[TEvent], max_buffer_size: Optional[int] = None) -> CDPEventListener[TEvent]:
+    def listen(self, event: type[TEvent], max_buffer_size: int | None = None) -> CDPEventListener[TEvent]:
         """
         Listen to a CDP event and return a new :class:`CDPEventListener` instance.
 
@@ -282,11 +289,11 @@ class CDPConnection(CDPBase, trio.abc.AsyncResource):
 
     def __init__(self, websocket: WebSocketConnection, cmd_timeout: float) -> None:
         super().__init__(websocket=websocket, cmd_timeout=cmd_timeout)
-        self.sessions: Dict[SessionID, CDPSession] = {}
+        self.sessions: dict[SessionID, CDPSession] = {}
 
     @classmethod
     @asynccontextmanager
-    async def create(cls, url: str, timeout: Optional[float] = None) -> AsyncGenerator[Self, None]:
+    async def create(cls, url: str, timeout: float | None = None) -> AsyncGenerator[Self, None]:
         """
         Establish a new CDP connection to the Chromium-based web browser's remote debugging interface.
 

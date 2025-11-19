@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import freezegun
 import pytest
 
-from streamlink import Streamlink
 from streamlink.plugins.filmon import Filmon, FilmOnAPI, FilmOnHLS
 from tests.plugins import PluginCanHandleUrl
+
+
+if TYPE_CHECKING:
+    from streamlink import Streamlink
 
 
 class TestPluginCanHandleUrlFilmon(PluginCanHandleUrl):
@@ -42,8 +48,10 @@ class TestPluginCanHandleUrlFilmon(PluginCanHandleUrl):
 
 @pytest.fixture()
 def filmonhls(session: Streamlink):
-    with freezegun.freeze_time("2000-01-01T00:00:00Z"), \
-         patch("streamlink.plugins.filmon.FilmOnHLS._get_stream_data", return_value=[]):
+    with (
+        freezegun.freeze_time("2000-01-01T00:00:00Z"),
+        patch("streamlink.plugins.filmon.FilmOnHLS._get_stream_data", return_value=[]),
+    ):
         api = FilmOnAPI(session)
         yield FilmOnHLS(session, "http://fake/one.m3u8", api=api, channel="test")
 

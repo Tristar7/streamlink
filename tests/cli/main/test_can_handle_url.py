@@ -1,16 +1,22 @@
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
 
 import pytest
 import requests_mock as rm
 
 import streamlink_cli.main
 from streamlink.plugin import Plugin, pluginmatcher
-from streamlink.session import Streamlink
+
+
+if TYPE_CHECKING:
+    from streamlink.session import Streamlink
 
 
 @pytest.fixture(autouse=True)
 def _plugins(session: Streamlink):
-    @pluginmatcher(re.compile("http://exists$"))
+    @pluginmatcher(re.compile(r"http://exists$"))
     class FakePlugin(Plugin):
         def _get_streams(self):  # pragma: no cover
             pass
