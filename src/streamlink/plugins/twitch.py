@@ -367,7 +367,7 @@ class TwitchAPI:
             ),
         )
 
-    # GraphQL API calls
+    # GraphQL API calls 
 
     def metadata_video(self, video_id):
         query = self._gql_persisted_query(
