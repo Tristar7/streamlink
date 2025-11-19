@@ -17,7 +17,6 @@ on:
 jobs:
   trigger:
     name: "Preview build - ${{ github.sha }}"
-    if: github.repository == 'streamlink/streamlink'
     runs-on: ubuntu-latest
     steps:
       - name: Windows builds
